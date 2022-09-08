@@ -33,10 +33,8 @@ add_definitions(-DCFG_TUSB_CONFIG_FILE="includes/tusb_config.h")
 add_definitions(-DUSB_VID=0x05ac)
 add_definitions(-DUSB_PID=0x024f)
 add_definitions(-DUSB_MANUFACTURER="Helloyunho")
-add_definitions(-DUSB_SERIAL_NUMBER="1234567890ABCDEF")
 
-pico_set_binary_type(sxgt-controller no_flash)
-
+# pico_set_binary_type(sxgt-controller no_flash)
 include_directories(includes
     TinyUSB_Mouse_and_Keyboard
     Adafruit_TinyUSB_Arduino/src

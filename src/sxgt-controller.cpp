@@ -8,8 +8,12 @@
 #include "pico/stdlib.h"
 
 // GPIO pins the keyswitch is on
-#define PINS \
+#define BUTTON_PINS \
     { 0, 1, 2, 3, 4, 5, 6, 7 }
+
+uint LED_PINS[8] = {8, 9, 10, 11, 12, 13, 14, 15};
+
+#define DEFAULT_LED_PIN 25
 
 // Debounce delay (ms)
 #define DEBOUNCE_DELAY 5
@@ -19,20 +23,27 @@ extern Adafruit_USBD_Device TinyUSBDevice;
 
 uint8_t KEYS[8] = {'d', 'f', 'g', 'h', 'j', 'c', 'b', KEY_RETURN};
 
+const char serial[32] = "SIXTAR-GATE-STARTRAIL";
+
 int main() {
     bi_decl(bi_program_description("Sixtar Gate: STARTRAIL Controller"));
     bi_decl(bi_program_feature("USB HID Device"));
-    TinyUSBDevice.setSerialDescriptor("6TARGATEC0NTR0L");
     TinyUSBDevice.begin();  // Initialise Adafruit TinyUSB
+    TinyUSBDevice.setSerialDescriptor(serial);
 
     // Initialise a keyboard (code will wait here to be plugged in)
     Keyboard.begin();
 
     // Initise GPIO pin as input with pull-up
-    for (int pin : PINS) {
+    for (int pin : BUTTON_PINS) {
         gpio_init(pin);
         gpio_set_dir(pin, GPIO_IN);
         gpio_pull_up(pin);
+    }
+
+    for (int pin : LED_PINS) {
+        gpio_init(pin);
+        gpio_set_dir(pin, GPIO_OUT);
     }
 
     // Variables for detecting key press
@@ -53,17 +64,19 @@ int main() {
         // Check GPIO pin, and if more than DEBOUNCE_DELAY ms have passed since
         // the key changed press release key depending on value (delay is for
         // debounce, ie to avoid rapid changes to switch value)
-        for (int pin : PINS) {
+        for (int pin : BUTTON_PINS) {
             bool state = gpio_get(pin);
             uint8_t key = KEYS[pin];
             uint32_t now = to_ms_since_boot(get_absolute_time());
             if ((now - lastTime[pin] > DEBOUNCE_DELAY) &&
                 state != lastState[pin]) {
-                if (state)  // The pin is pulled up by default, so the logic is
-                            // backwards
-                    Keyboard.release(key);  // and true is released
-                else
+                if (state) {
+                    Keyboard.release(key);
+                    gpio_put(LED_PINS[pin], 0);
+                } else {
                     Keyboard.press(key);
+                    gpio_put(LED_PINS[pin], 1);
+                }
                 lastTime[pin] = now;
                 lastState[pin] = state;
             }
