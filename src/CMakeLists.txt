@@ -1,52 +1,52 @@
 cmake_minimum_required(VERSION 3.13)
-
 include(pico_sdk_import.cmake)
 
 project(sxgt-controller_project C CXX ASM)
-set(CMAKE_C_STANDARD 11)
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 pico_sdk_init()
 
+if(APPLE)
+execute_process(COMMAND xcrun -f swiftc OUTPUT_VARIABLE SWIFTC OUTPUT_STRIP_TRAILING_WHITESPACE)
+else()
+execute_process(COMMAND which swiftc OUTPUT_VARIABLE SWIFTC OUTPUT_STRIP_TRAILING_WHITESPACE)
+endif()
+
 add_executable(sxgt-controller
-    sxgt-controller.cpp
-    TinyUSB_Mouse_and_Keyboard/TinyUSB_Mouse_and_Keyboard.cpp
-    Adafruit_TinyUSB_Arduino/src/arduino/hid/Adafruit_USBD_HID.cpp
-    Adafruit_TinyUSB_Arduino/src/arduino/Adafruit_USBD_Device.cpp
-    Adafruit_TinyUSB_Arduino/src/arduino/ports/rp2040/Adafruit_TinyUSB_rp2040.cpp
-    Print.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/usb_descriptors.c
+    ${CMAKE_CURRENT_LIST_DIR}/swift_atomic_ops.c
 )
 
-target_include_directories(sxgt-controller PRIVATE ${CMAKE_CURRENT_LIST_DIR})
+add_custom_command(
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/_swiftcode.o
+    COMMAND
+        ${SWIFTC}
+        -target armv6m-none-none-eabi -Xcc -mfloat-abi=soft -Xcc -fshort-enums
+        -Xfrontend -function-sections -enable-experimental-feature Embedded -wmo -parse-as-library
+        -Xcc -DCFG_TUSB_MCU=OPT_MCU_RP2040
+        -Xllvm -mattr=+atomics-32
+        -O
+        $$\( echo '$<TARGET_PROPERTY:sxgt-controller,INCLUDE_DIRECTORIES>' | tr '\;' '\\n' | sed -e 's/\\\(.*\\\)/-Xcc -I\\1/g' \)
+        $$\( echo '${CMAKE_C_IMPLICIT_INCLUDE_DIRECTORIES}'             | tr ' '  '\\n' | sed -e 's/\\\(.*\\\)/-Xcc -I\\1/g' \)
+        -import-bridging-header ${CMAKE_CURRENT_LIST_DIR}/BridgingHeader.h
+        ${CMAKE_CURRENT_LIST_DIR}/Main.swift
+        -c -o ${CMAKE_CURRENT_BINARY_DIR}/_swiftcode.o
+    DEPENDS
+        ${CMAKE_CURRENT_LIST_DIR}/BridgingHeader.h
+        ${CMAKE_CURRENT_LIST_DIR}/Main.swift
+)
+
+add_custom_target(sxgt-controller-swiftcode DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/_swiftcode.o)
+
+target_include_directories(sxgt-controller PUBLIC ${CMAKE_CURRENT_LIST_DIR})
 
 target_link_libraries(sxgt-controller
     pico_stdlib
     pico_unique_id
+    hardware_gpio
     tinyusb_device
     tinyusb_board
+    ${CMAKE_CURRENT_BINARY_DIR}/_swiftcode.o
 )
+
+add_dependencies(sxgt-controller sxgt-controller-swiftcode)
 pico_add_extra_outputs(sxgt-controller)
-
-add_definitions(-DUSE_TINYUSB)
-add_definitions(-DUSB_PRODUCT="SXGT Controller")
-add_definitions(-DARDUINO_ARCH_RP2040)
-add_definitions(-DCFG_TUSB_CONFIG_FILE="includes/tusb_config.h")
-add_definitions(-DUSB_VID=0x05ac)
-add_definitions(-DUSB_PID=0x024f)
-add_definitions(-DUSB_MANUFACTURER="Helloyunho")
-
-# pico_set_binary_type(sxgt-controller no_flash)
-include_directories(includes
-    TinyUSB_Mouse_and_Keyboard
-    Adafruit_TinyUSB_Arduino/src
-)
-
-# remove Adafruit tinyusb library code so that only the pico-sdk tinyusb code is used
-# to restore, cd Adafruit_TinyUSB_Arduino/ && git checkout HEAD .
-file(REMOVE Adafruit_TinyUSB_Arduino/src/tusb.c)
-file(REMOVE Adafruit_TinyUSB_Arduino/src/tusb.h)
-file(REMOVE Adafruit_TinyUSB_Arduino/src/tusb_option.h)
-file(REMOVE_RECURSE Adafruit_TinyUSB_Arduino/src/osal/)
-file(REMOVE_RECURSE Adafruit_TinyUSB_Arduino/src/portable/)
-file(REMOVE_RECURSE Adafruit_TinyUSB_Arduino/src/device/)
-file(REMOVE_RECURSE Adafruit_TinyUSB_Arduino/src/common/)
-file(REMOVE_RECURSE Adafruit_TinyUSB_Arduino/src/class/)
